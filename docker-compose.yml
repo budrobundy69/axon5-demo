@@ -1,0 +1,10 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: axon-demo-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: axon_demo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
