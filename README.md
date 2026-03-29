@@ -2,7 +2,7 @@
 
 Dieses Projekt zeigt ein minimales CQRS/Event-Driven Beispiel mit:
 
--   Axon Framework 5.0.3
+-   Axon Framework 5.0.4
 -   Spring Boot 4.0.5
 -   Java 26
 -   Persistenter Event Store und Token Store via JPA
