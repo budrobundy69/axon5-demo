@@ -22,7 +22,7 @@ Die Daten liegen dann in `./.data/axon-demo`.
 Postgres starten (mit `docker-compose.yml`):
 
 ```bash
-docker compose up -d postgres
+docker-compose up -d postgres
 ```
 
 App mit Postgres-Profil starten:
