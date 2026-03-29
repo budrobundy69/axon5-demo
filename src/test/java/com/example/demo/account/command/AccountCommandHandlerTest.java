@@ -2,58 +2,93 @@ package com.example.demo.account.command;
 
 import com.example.demo.account.api.command.DepositMoneyCommand;
 import com.example.demo.account.api.command.OpenAccountCommand;
+import com.example.demo.account.api.event.AccountOpenedEvent;
+import com.example.demo.account.api.event.MoneyDepositedEvent;
+import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
+import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.eventhandling.gateway.EventGateway;
+import org.axonframework.test.fixture.AxonTestFixture;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.concurrent.CompletableFuture;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
-@ExtendWith(MockitoExtension.class)
 class AccountCommandHandlerTest {
 
-    @Mock
-    private EventGateway eventGateway;
-
-    private AccountCommandHandler handler;
+    private AxonTestFixture fixture;
 
     @BeforeEach
     void setUp() {
-        handler = new AccountCommandHandler(eventGateway);
+        fixture = AxonTestFixture.with(
+                MessagingConfigurer.create()
+                        .registerCommandHandlingModule(() ->
+                                CommandHandlingModule.named("account-command-handlers")
+                                        .commandHandlers()
+                                        .autodetectedCommandHandlingComponent(
+                                                config -> new AccountCommandHandler(config.getComponent(EventGateway.class))
+                                        )
+                                        .build()
+                        ),
+                AxonTestFixture.Customization::disableAxonServer
+        );
+    }
+
+    @AfterEach
+    void tearDown() {
+        fixture.stop();
     }
 
     @Test
-    void openAndDepositPublishesEvents() {
-        when(eventGateway.publish(anyList())).thenReturn(CompletableFuture.completedFuture(null));
-
-        handler.handle(new OpenAccountCommand("acc-1", 100));
-        handler.handle(new DepositMoneyCommand("acc-1", 25));
-
-        verify(eventGateway, times(2)).publish(anyList());
+    void givenNoAccountWhenOpenAccountThenPublishesAccountOpenedEvent() {
+        fixture.given()
+               .noPriorActivity()
+               .when()
+               .command(new OpenAccountCommand("acc-1", 100))
+               .then()
+               .success()
+               .events(new AccountOpenedEvent("acc-1", 100));
     }
 
     @Test
-    void openingSameAccountTwiceThrows() {
-        when(eventGateway.publish(anyList())).thenReturn(CompletableFuture.completedFuture(null));
-
-        handler.handle(new OpenAccountCommand("acc-1", 100));
-
-        assertThrows(IllegalArgumentException.class, () -> handler.handle(new OpenAccountCommand("acc-1", 100)));
-        verify(eventGateway, times(1)).publish(anyList());
+    void givenExistingAccountWhenOpenAccountAgainThenThrowsException() {
+        fixture.given()
+               .command(new OpenAccountCommand("acc-1", 100))
+               .when()
+               .command(new OpenAccountCommand("acc-1", 100))
+               .then()
+               .exceptionSatisfies(throwable -> {
+                   Throwable root = throwable.getCause() != null ? throwable.getCause() : throwable;
+                   assertInstanceOf(IllegalArgumentException.class, root);
+                   assertEquals("Account already exists: acc-1", root.getMessage());
+               })
+               .noEvents();
     }
 
     @Test
-    void depositingUnknownAccountThrows() {
-        assertThrows(IllegalArgumentException.class, () -> handler.handle(new DepositMoneyCommand("missing", 25)));
-        verify(eventGateway, never()).publish(anyList());
+    void givenExistingAccountWhenDepositMoneyThenPublishesMoneyDepositedEvent() {
+        fixture.given()
+               .command(new OpenAccountCommand("acc-1", 100))
+               .when()
+               .command(new DepositMoneyCommand("acc-1", 25))
+               .then()
+               .success()
+               .events(new MoneyDepositedEvent("acc-1", 25));
+    }
+
+    @Test
+    void givenMissingAccountWhenDepositMoneyThenThrowsException() {
+        fixture.given()
+               .noPriorActivity()
+               .when()
+               .command(new DepositMoneyCommand("missing", 25))
+               .then()
+               .exceptionSatisfies(throwable -> {
+                   Throwable root = throwable.getCause() != null ? throwable.getCause() : throwable;
+                   assertInstanceOf(IllegalArgumentException.class, root);
+                   assertEquals("Account not found: missing", root.getMessage());
+               })
+               .noEvents();
     }
 }
